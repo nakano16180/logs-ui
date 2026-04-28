@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "data-table-filters": {
+      "source": "openstatushq/data-table-filters",
+      "sourceType": "github",
+      "computedHash": "5c1a0647e725128fceb58802a9558e5df06d73fe4d1502d890737d13b5cd3623"
+    }
+  }
+}

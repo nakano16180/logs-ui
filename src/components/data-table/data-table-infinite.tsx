@@ -37,6 +37,7 @@ import {
 import type {
   ColumnDef,
   ColumnFiltersState,
+  ExpandedState,
   Row,
   RowSelectionState,
   SortingState,
@@ -47,6 +48,7 @@ import type {
 import {
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getFacetedRowModel,
   getFilteredRowModel,
   getSortedRowModel,
@@ -91,6 +93,9 @@ export interface DataTableInfiniteProps<TData, TValue> {
   ) => Promise<unknown>;
   refetch: (options?: RefetchOptions | undefined) => void;
   renderLiveRow?: (props?: { row: Row<TData> }) => React.ReactNode;
+  // Render an expansion row underneath each expanded row. Wire your column
+  // (or row click handler) to call `row.toggleExpanded()` to drive it.
+  renderSubComponent?: (props: { row: Row<TData> }) => React.ReactNode;
   // Used to store column order and visibility in local storage for specific data-table namespace
   tableId?: string;
   // Optional slots for extensibility
@@ -125,6 +130,7 @@ export function DataTableInfinite<TData, TValue>({
   getFacetedUniqueValues,
   getFacetedMinMaxValues,
   renderLiveRow,
+  renderSubComponent,
   tableId = "infinite",
   commandSlot,
   sheetSlot,
@@ -149,6 +155,7 @@ export function DataTableInfinite<TData, TValue>({
       getColumnVisibilityKey(tableId),
       defaultColumnVisibility,
     );
+  const [expanded, setExpanded] = React.useState<ExpandedState>({});
   const topBarRef = React.useRef<HTMLDivElement>(null);
   const tableRef = React.useRef<HTMLTableElement>(null);
   const [topBarHeight, setTopBarHeight] = React.useState(0);
@@ -196,6 +203,7 @@ export function DataTableInfinite<TData, TValue>({
       columnVisibility,
       rowSelection,
       columnOrder,
+      expanded,
     },
     enableMultiRowSelection: hasSelectColumn,
     columnResizeMode: "onChange",
@@ -205,10 +213,12 @@ export function DataTableInfinite<TData, TValue>({
     onRowSelectionChange: setRowSelection,
     onSortingChange: setSorting,
     onColumnOrderChange: setColumnOrder,
+    onExpandedChange: setExpanded,
     getSortedRowModel: getSortedRowModel(),
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
+    getExpandedRowModel: getExpandedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValuesFlattened(),
     getFacetedMinMaxValues: getTTableFacetedMinMaxValues(),
     filterFns: { inDateRange, arrSome },
@@ -454,7 +464,21 @@ export function DataTableInfinite<TData, TValue>({
                         onRowClick={onRowClick}
                         visibleColumnIds={visibleColumnIds}
                         columnOrder={columnOrderString}
+                        expanded={row.getIsExpanded()}
                       />
+                      {row.getIsExpanded() && renderSubComponent ? (
+                        <TableRow
+                          data-state="expanded"
+                          className="hover:bg-transparent"
+                        >
+                          <TableCell
+                            colSpan={row.getVisibleCells().length}
+                            className="border-border bg-muted/30 border-b p-3"
+                          >
+                            {renderSubComponent({ row })}
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
                     </React.Fragment>
                   ))
                 ) : (
@@ -534,6 +558,8 @@ function Row<TData>({
   // REMINDER: for memoization - triggers re-render when columns change
   visibleColumnIds: string;
   columnOrder: string;
+  // REMINDER: for memoization - triggers re-render when expansion toggles
+  expanded?: boolean;
 }) {
   // REMINDER: rerender the row when live mode is toggled - used to opacity the row
   // via the `getRowClassName` prop - but for some reasons it wil render the row on data fetch
@@ -608,5 +634,6 @@ const MemoizedRow = React.memo(
     prev.detailRowId === next.detailRowId &&
     prev.onRowClick === next.onRowClick &&
     prev.visibleColumnIds === next.visibleColumnIds &&
-    prev.columnOrder === next.columnOrder,
+    prev.columnOrder === next.columnOrder &&
+    prev.expanded === next.expanded,
 ) as typeof Row;

@@ -15,26 +15,27 @@ import {
 } from '@/components/ui/chart'
 import { useDataTable } from '@/components/data-table/data-table-provider'
 import { cn } from '@/lib/utils'
-import { LOG_LEVELS, type LogRow } from '@/lib/logs-schema'
+import { TRACE_STATUSES, type TraceRow } from '@/lib/traces-schema'
 
-type Bucket = { timestamp: number } & Record<(typeof LOG_LEVELS)[number], number>
+type Bucket = { timestamp: number } & Record<
+  (typeof TRACE_STATUSES)[number],
+  number
+>
 
 const chartConfig = {
+  ok: { label: 'OK', color: 'var(--info)' },
   error: { label: 'Error', color: 'var(--error)' },
-  warn: { label: 'Warn', color: 'var(--warning)' },
-  info: { label: 'Info', color: 'var(--info)' },
-  debug: { label: 'Debug', color: 'var(--muted-foreground)' },
 } satisfies ChartConfig
 
-const TIMESTAMP_COLUMN_ID = 'timestamp'
+const TIMESTAMP_COLUMN_ID = 'startTime'
 
-function bucketLogs(rows: LogRow[], bucketCount = 60): Bucket[] {
+function bucketTraces(rows: TraceRow[], bucketCount = 60): Bucket[] {
   if (rows.length === 0) return []
 
   let min = Number.POSITIVE_INFINITY
   let max = Number.NEGATIVE_INFINITY
   for (const r of rows) {
-    const t = r.timestamp.getTime()
+    const t = r.startTime.getTime()
     if (t < min) min = t
     if (t > max) max = t
   }
@@ -45,21 +46,28 @@ function bucketLogs(rows: LogRow[], bucketCount = 60): Bucket[] {
 
   const buckets: Bucket[] = Array.from({ length: bucketCount }, (_, i) => ({
     timestamp: Math.round(min + bucketSize * i),
+    ok: 0,
     error: 0,
-    warn: 0,
-    info: 0,
-    debug: 0,
   }))
 
   for (const r of rows) {
     const idx = Math.min(
       bucketCount - 1,
-      Math.floor((r.timestamp.getTime() - min) / bucketSize),
+      Math.floor((r.startTime.getTime() - min) / bucketSize),
     )
-    buckets[idx][r.level]++
+    buckets[idx][r.status]++
   }
 
   return buckets
+}
+
+type Period = '10m' | '1d' | '1w' | '1mo'
+
+function periodFor(intervalMs: number): Period {
+  if (intervalMs <= 1000 * 60 * 10) return '10m'
+  if (intervalMs <= 1000 * 60 * 60 * 24) return '1d'
+  if (intervalMs <= 1000 * 60 * 60 * 24 * 7) return '1w'
+  return '1mo'
 }
 
 function formatTick(value: string, period: Period): string {
@@ -71,31 +79,25 @@ function formatTick(value: string, period: Period): string {
   return format(date, 'LLL dd, y')
 }
 
-type Period = '10m' | '1d' | '1w' | '1mo'
-function periodFor(intervalMs: number): Period {
-  if (intervalMs <= 1000 * 60 * 10) return '10m'
-  if (intervalMs <= 1000 * 60 * 60 * 24) return '1d'
-  if (intervalMs <= 1000 * 60 * 60 * 24 * 7) return '1w'
-  return '1mo'
-}
-
-export interface LogsTimelineProps {
-  data: LogRow[]
+export interface TracesTimelineProps {
+  data: TraceRow[]
   className?: string
 }
 
-export function LogsTimeline({ data, className }: LogsTimelineProps) {
-  const { table } = useDataTable<LogRow, unknown>()
+export function TracesTimeline({ data, className }: TracesTimelineProps) {
+  const { table } = useDataTable<TraceRow, unknown>()
   const [refLeft, setRefLeft] = React.useState<string | null>(null)
   const [refRight, setRefRight] = React.useState<string | null>(null)
   const [isSelecting, setIsSelecting] = React.useState(false)
 
-  const buckets = React.useMemo(() => bucketLogs(data), [data])
+  const buckets = React.useMemo(() => bucketTraces(data), [data])
 
-  // Recharts' tooltip needs a string label to behave consistently
   const chart = React.useMemo(
     () =>
-      buckets.map((b) => ({ ...b, [TIMESTAMP_COLUMN_ID]: new Date(b.timestamp).toString() })),
+      buckets.map((b) => ({
+        ...b,
+        [TIMESTAMP_COLUMN_ID]: new Date(b.timestamp).toString(),
+      })),
     [buckets],
   )
 
@@ -114,7 +116,8 @@ export function LogsTimeline({ data, className }: LogsTimelineProps) {
   }
 
   const handleMouseMove = (e: ChartMouseEvent) => {
-    if (isSelecting && e?.activeLabel != null) setRefRight(String(e.activeLabel))
+    if (isSelecting && e?.activeLabel != null)
+      setRefRight(String(e.activeLabel))
   }
 
   const handleMouseUp = () => {
@@ -174,10 +177,8 @@ export function LogsTimeline({ data, className }: LogsTimelineProps) {
             />
           }
         />
+        <Bar dataKey="ok" stackId="a" fill="var(--color-ok)" />
         <Bar dataKey="error" stackId="a" fill="var(--color-error)" />
-        <Bar dataKey="warn" stackId="a" fill="var(--color-warn)" />
-        <Bar dataKey="info" stackId="a" fill="var(--color-info)" />
-        <Bar dataKey="debug" stackId="a" fill="var(--color-debug)" />
         {refLeft && refRight && (
           <ReferenceArea
             x1={refLeft}
